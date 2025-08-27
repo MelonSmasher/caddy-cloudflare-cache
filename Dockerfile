@@ -1,11 +1,18 @@
-# Build Caddy with Cloudflare DNS and cache-handler (with Redis/Valkey storage) using xcaddy
+# Build Caddy with Cloudflare DNS and Souin using xcaddy
 FROM caddy:builder AS builder
 
 # Build Caddy with required plugins
 RUN xcaddy build \
     --with github.com/caddy-dns/cloudflare \
-    --with github.com/caddyserver/cache-handler \
-    --with github.com/darkweak/storages/redis/caddy
+    --with github.com/darkweak/souin/plugins/caddy \
+    --with github.com/darkweak/storages/badger/caddy \
+    --with github.com/darkweak/storages/redis/caddy \
+    --with github.com/darkweak/storages/etcd/caddy \
+    --with github.com/darkweak/storages/nuts/caddy \
+    --with github.com/darkweak/storages/olric/caddy \
+    --with github.com/darkweak/storages/nats/caddy \
+    --with github.com/darkweak/storages/otter/caddy \
+    --with github.com/darkweak/storages/simplefs/caddy
 
 # Final image
 FROM caddy:latest
