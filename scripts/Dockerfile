@@ -1,23 +1,17 @@
 # Build Caddy with Cloudflare DNS and Souin using xcaddy
 # Accept upstream tags at build time
 ARG CADDY_TAG=latest
-ARG CADDY_BUILDER_TAG=builder
-
-FROM caddy:${CADDY_BUILDER_TAG} AS builder
+FROM caddy:builder AS builder
+ARG CADDY_TAG
 
 # Build Caddy with required plugins
 RUN set -eux; \
-    # Ensure xcaddy is present (older builder tags may not include it)
-    if ! command -v xcaddy >/dev/null 2>&1; then \
-      export GOBIN=/usr/bin; \
-      go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest; \
-    fi; \
     # Derive caddy version from CADDY_TAG (strip -alpine, prefix with v); "2" becomes "v2"
-    VER="$CADDY_TAG"; \
+    VER="${CADDY_TAG:-}"; \
     VER="${VER%-alpine}"; \
-    [ -n "$VER" ] && VER="v${VER}"; \
-    # Build caddy with required plugins
-    xcaddy build "$VER" \
+    case "$VER" in v*) : ;; "") : ;; *) VER="v${VER}" ;; esac; \
+    # Build caddy with required plugins (xcaddy is present in caddy:builder)
+    xcaddy build ${VER:+"$VER"} --output /usr/bin/caddy \
       --with github.com/caddy-dns/cloudflare \
       --with github.com/WeidiDeng/caddy-cloudflare-ip \
       --with github.com/darkweak/souin/plugins/caddy \
