@@ -152,6 +152,7 @@ def build_and_push(tag: str) -> bool:
         "-t", f"{REPO_GHCR}:{tag}",
         "--build-arg", f"CADDY_TAG={tag}",
         "--build-arg", f"CADDY_BUILDER_TAG={builder_tag}",
+        "-f", "Dockerfile",
         "--push",
         ".",
     ]
