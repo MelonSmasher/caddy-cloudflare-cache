@@ -173,10 +173,16 @@ def build_and_push(tag: str) -> bool:
     if v and v < (2, 10, 0):
         souin_pin = os.environ.get("SOUIN_VERSION_LT_2_10", "").strip()
         storages_pin = os.environ.get("STORAGES_VERSION_LT_2_10", "").strip()
+        cf_dns_pin = os.environ.get("CLOUDFLARE_DNS_VERSION_LT_2_10", "").strip()
+        cf_ip_pin = os.environ.get("CFIP_VERSION_LT_2_10", "").strip()
         if souin_pin:
             cmd += ["--build-arg", f"SOUIN_VERSION={souin_pin}"]
         if storages_pin:
             cmd += ["--build-arg", f"STORAGES_VERSION={storages_pin}"]
+        if cf_dns_pin:
+            cmd += ["--build-arg", f"CLOUDFLARE_DNS_VERSION={cf_dns_pin}"]
+        if cf_ip_pin:
+            cmd += ["--build-arg", f"CFIP_VERSION={cf_ip_pin}"]
 
     cmd += ["--push", "."]
     code = run(cmd)

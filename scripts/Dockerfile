@@ -7,6 +7,8 @@ FROM caddy:${CADDY_BUILDER_TAG} AS builder
 ARG CADDY_TAG
 ARG SOUIN_VERSION
 ARG STORAGES_VERSION
+ARG CLOUDFLARE_DNS_VERSION
+ARG CFIP_VERSION
 
 # Build Caddy with required plugins
 RUN set -eux; \
@@ -23,8 +25,8 @@ RUN set -eux; \
     [ -n "$VER" ] && VER="v${VER}"; \
     # Build caddy with required plugins
     xcaddy build "$VER" \
-      --with github.com/caddy-dns/cloudflare \
-      --with github.com/WeidiDeng/caddy-cloudflare-ip \
+      --with github.com/caddy-dns/cloudflare${CLOUDFLARE_DNS_VERSION:+@${CLOUDFLARE_DNS_VERSION}} \
+      --with github.com/WeidiDeng/caddy-cloudflare-ip${CFIP_VERSION:+@${CFIP_VERSION}} \
       --with github.com/darkweak/souin/plugins/caddy${SOUIN_VERSION:+@${SOUIN_VERSION}} \
       --with github.com/darkweak/storages/badger/caddy${STORAGES_VERSION:+@${STORAGES_VERSION}} \
       --with github.com/darkweak/storages/redis/caddy${STORAGES_VERSION:+@${STORAGES_VERSION}} \
