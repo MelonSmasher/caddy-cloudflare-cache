@@ -20,16 +20,12 @@ REPO_GHCR = os.environ.get("TARGET_REPO_GHCR", "ghcr.io/melonsmasher/caddy-cloud
 DB_PATH = os.environ.get("STATE_DB", os.path.join(os.path.dirname(__file__), "state.db"))
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "600"))  # seconds
 PLATFORMS = os.environ.get("PLATFORMS", "linux/amd64,linux/arm64")
-ALWAYS_PULL = os.environ.get("ALWAYS_PULL", "1") == "1"
-MAX_BUILDS_PER_RUN = int(os.environ.get("MAX_BUILDS_PER_RUN", "0"))  # 0 => no cap
-BUILD_DELAY_SEC = int(os.environ.get("BUILD_DELAY_SEC", "0"))
 # Mirror only 2.x tags (optionally -alpine). Examples matched: 2, 2.7, 2.7.6, 2-alpine, 2.7-alpine, 2.7.6-alpine
 # Explicitly exclude builder images and any windowsservercore variants.
-TAG_INCLUDE_REGEX = re.compile(r"^2(?:\.?\d+(?:\.\d+)?)?(?:-alpine)?$")
+TAG_INCLUDE_REGEX = re.compile(r"^2(?:\.\d+(?:\.\d+)?)?(?:-alpine)?$")
 TAG_EXCLUDE_REGEX = re.compile(r"(?:.*-builder$)|(?:.*-windowsservercore.*)")
 
-# Minimum Caddy version supported by the plugin set (e.g., cloudflare dns plugin requires >= v2.7.5)
-MIN_CADDY_VERSION = (2, 7, 5)
+# Accept headers for manifest list (index) and image manifest
 ACCEPT_HEADERS = ", ".join([
     "application/vnd.docker.distribution.manifest.list.v2+json",
     "application/vnd.oci.image.index.v1+json",
@@ -116,46 +112,23 @@ def list_hub_tags() -> List[str]:
     return tags
 
 
-def parse_caddy_version(tag: str) -> Optional[Tuple[int, int, int]]:
-    """Parse caddy tag like '2', '2.7', '2.7.6', optionally with '-alpine'.
-    Returns a (major, minor, patch) tuple or None if not a 2.x tag.
-    """
-    # Strip variant suffix (e.g., '-alpine')
-    base = tag.split("-", 1)[0]
-    parts = base.split(".")
-    # Must start with major '2'
-    try:
-        major = int(parts[0])
-    except (ValueError, IndexError):
-        return None
-    if major != 2:
-        return None
-    # Fill missing minor/patch with zeros
-    minor = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
-    patch = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
-    return (major, minor, patch)
-
-
 def filter_tags(all_tags: List[str]) -> List[str]:
     filtered = []
     for t in all_tags:
         if TAG_EXCLUDE_REGEX.match(t):
             continue
         if TAG_INCLUDE_REGEX.match(t):
-            v = parse_caddy_version(t)
-            if not v:
-                continue
-            if v < MIN_CADDY_VERSION:
-                # below supported baseline for our plugin set
-                continue
             filtered.append(t)
     # Unique and sorted for stability
     return sorted(set(filtered))
 
 
 def decide_builder_tag(base_tag: str) -> str:
-    # We standardized on the official builder image which includes xcaddy.
-    # Returning a constant avoids extra registry lookups and rate limit consumption.
+    # Prefer versioned builder when available: <tag>-builder; else fallback to 'builder'
+    candidate = f"{base_tag}-builder"
+    dig = get_manifest_digest(candidate)
+    if dig:
+        return candidate
     return "builder"
 
 
@@ -170,24 +143,18 @@ def build_and_push(tag: str) -> bool:
     log(f"Building for tag={tag}, builder_tag={builder_tag}")
 
     # Compose docker buildx command
-    dockerfile_path = os.path.join(os.path.dirname(__file__), "Dockerfile")
-    docker_context = os.path.dirname(dockerfile_path)
-    cmd: List[str] = ["docker", "buildx", "build"]
-    # Options block; ensure flag/value adjacency is preserved
-    opts: List[str] = []
-    if ALWAYS_PULL:
-        opts += ["--pull"]
-    opts += [
+    cmd = [
+        "docker", "buildx", "build",
         "--platform", PLATFORMS,
+        "--pull",
         "--provenance=false",
         "-t", f"{REPO_DOCKERHUB}:{tag}",
         "-t", f"{REPO_GHCR}:{tag}",
         "--build-arg", f"CADDY_TAG={tag}",
-        "-f", dockerfile_path,
+        "--build-arg", f"CADDY_BUILDER_TAG={builder_tag}",
         "--push",
-        docker_context,
+        ".",
     ]
-    cmd += opts
     code = run(cmd)
     if code != 0:
         log(f"Build failed for {tag} (exit {code})")
@@ -196,14 +163,11 @@ def build_and_push(tag: str) -> bool:
     return True
 
 
-def sync_once(conn: sqlite3.Connection, only_tag: Optional[str] = None) -> None:
+def sync_once(conn: sqlite3.Connection) -> None:
     all_tags = list_hub_tags()
     targets = filter_tags(all_tags)
-    if only_tag:
-        targets = [t for t in targets if t == only_tag]
-    log(f"Found {len(targets)} 2.x tags to mirror (>= {'.'.join(map(str, MIN_CADDY_VERSION))}, incl. alpine)")
+    log(f"Found {len(targets)} 2.x tags to mirror (incl. alpine)")
     cur = conn.cursor()
-    built = 0
     for tag in targets:
         # Defensive guard: never build Windows Server Core variants even if they slip past filters
         if "windowsservercore" in tag:
@@ -213,7 +177,7 @@ def sync_once(conn: sqlite3.Connection, only_tag: Optional[str] = None) -> None:
         if not digest:
             log(f"Skip {tag}: no digest found")
             continue
-        row = cur.execute("SELECT digest FROM tags WHERE tag= ?", (tag,)).fetchone()
+        row = cur.execute("SELECT digest FROM tags WHERE tag=?", (tag,)).fetchone()
         if row and row[0] == digest:
             # No change
             continue
@@ -236,19 +200,12 @@ def sync_once(conn: sqlite3.Connection, only_tag: Optional[str] = None) -> None:
                 (tag, row[0] if row else "", now),
             )
             conn.commit()
-        built += 1
-        if BUILD_DELAY_SEC > 0:
-            time.sleep(BUILD_DELAY_SEC)
-        if MAX_BUILDS_PER_RUN and built >= MAX_BUILDS_PER_RUN:
-            log(f"Build cap reached for this run (MAX_BUILDS_PER_RUN={MAX_BUILDS_PER_RUN})")
-            break
 
 
 def main():
     parser = argparse.ArgumentParser(description="Mirror upstream caddy 2.x (+alpine) tags with custom build")
     parser.add_argument("--once", action="store_true", help="Run a single scan/build cycle and exit")
     parser.add_argument("--list-only", action="store_true", help="List filtered tags and exit (no builds)")
-    parser.add_argument("--tag", help="Build only this specific tag", default=None)
     args = parser.parse_args()
 
     # Basic env checks
@@ -262,25 +219,6 @@ def main():
         except Exception:
             log("ERROR: docker buildx not available. Install/enable buildx and create a builder.")
             sys.exit(1)
-
-    # Optional Docker Hub login to raise rate limits
-    dockerhub_user = os.environ.get("DOCKERHUB_USERNAME")
-    dockerhub_pass = os.environ.get("DOCKERHUB_PASSWORD") or os.environ.get("DOCKERHUB_TOKEN")
-    if dockerhub_user and dockerhub_pass:
-        try:
-            log("Logging into Docker Hub (username from DOCKERHUB_USERNAME)")
-            proc = subprocess.run(
-                ["docker", "login", "-u", dockerhub_user, "--password-stdin"],
-                input=dockerhub_pass.encode(),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            if proc.returncode != 0:
-                log(f"WARNING: docker login failed: {proc.stderr.decode().strip()}")
-            else:
-                log("Docker login succeeded")
-        except Exception as e:
-            log(f"WARNING: docker login exception: {e}")
 
     conn = sqlite3.connect(DB_PATH)
     db_init(conn)
@@ -296,13 +234,13 @@ def main():
         return
 
     if args.once:
-        sync_once(conn, only_tag=args.tag)
+        sync_once(conn)
         return
 
     log(f"Starting watcher loop; polling every {POLL_INTERVAL}s")
     while True:
         try:
-            sync_once(conn, only_tag=args.tag)
+            sync_once(conn)
         except Exception as e:
             log(f"ERROR during sync: {e}")
         time.sleep(POLL_INTERVAL)
