@@ -4,6 +4,9 @@ ARG CADDY_TAG=latest
 ARG CADDY_BUILDER_TAG=builder
 
 FROM caddy:${CADDY_BUILDER_TAG} AS builder
+ARG CADDY_TAG
+ARG SOUIN_VERSION
+ARG STORAGES_VERSION
 
 # Build Caddy with required plugins
 RUN set -eux; \
@@ -22,15 +25,15 @@ RUN set -eux; \
     xcaddy build "$VER" \
       --with github.com/caddy-dns/cloudflare \
       --with github.com/WeidiDeng/caddy-cloudflare-ip \
-      --with github.com/darkweak/souin/plugins/caddy \
-      --with github.com/darkweak/storages/badger/caddy \
-      --with github.com/darkweak/storages/redis/caddy \
-      --with github.com/darkweak/storages/etcd/caddy \
-      --with github.com/darkweak/storages/nuts/caddy \
-      --with github.com/darkweak/storages/olric/caddy \
-      --with github.com/darkweak/storages/nats/caddy \
-      --with github.com/darkweak/storages/otter/caddy \
-      --with github.com/darkweak/storages/simplefs/caddy
+      --with github.com/darkweak/souin/plugins/caddy${SOUIN_VERSION:+@${SOUIN_VERSION}} \
+      --with github.com/darkweak/storages/badger/caddy${STORAGES_VERSION:+@${STORAGES_VERSION}} \
+      --with github.com/darkweak/storages/redis/caddy${STORAGES_VERSION:+@${STORAGES_VERSION}} \
+      --with github.com/darkweak/storages/etcd/caddy${STORAGES_VERSION:+@${STORAGES_VERSION}} \
+      --with github.com/darkweak/storages/nuts/caddy${STORAGES_VERSION:+@${STORAGES_VERSION}} \
+      --with github.com/darkweak/storages/olric/caddy${STORAGES_VERSION:+@${STORAGES_VERSION}} \
+      --with github.com/darkweak/storages/nats/caddy${STORAGES_VERSION:+@${STORAGES_VERSION}} \
+      --with github.com/darkweak/storages/otter/caddy${STORAGES_VERSION:+@${STORAGES_VERSION}} \
+      --with github.com/darkweak/storages/simplefs/caddy${STORAGES_VERSION:+@${STORAGES_VERSION}}
 
 # Final image
 FROM caddy:${CADDY_TAG}

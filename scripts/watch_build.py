@@ -123,12 +123,26 @@ def filter_tags(all_tags: List[str]) -> List[str]:
     return sorted(set(filtered))
 
 
+def parse_caddy_version(tag: str) -> Optional[Tuple[int, int, int]]:
+    """Parse caddy tag like '2', '2.7', '2.7.6', optionally with '-alpine'.
+    Returns a (major, minor, patch) tuple or None if not a 2.x tag.
+    """
+    base = tag.split("-", 1)[0]
+    parts = base.split(".")
+    try:
+        major = int(parts[0])
+    except (ValueError, IndexError):
+        return None
+    if major != 2:
+        return None
+    minor = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+    patch = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+    return (major, minor, patch)
+
+
 def decide_builder_tag(base_tag: str) -> str:
-    # Prefer versioned builder when available: <tag>-builder; else fallback to 'builder'
-    candidate = f"{base_tag}-builder"
-    dig = get_manifest_digest(candidate)
-    if dig:
-        return candidate
+    # Always use the rolling builder image which ships a modern Go toolchain and xcaddy
+    # Versioned builder images (e.g., 2.0.0-builder) are too old and fail installing xcaddy
     return "builder"
 
 
@@ -152,9 +166,19 @@ def build_and_push(tag: str) -> bool:
         "-t", f"{REPO_GHCR}:{tag}",
         "--build-arg", f"CADDY_TAG={tag}",
         "--build-arg", f"CADDY_BUILDER_TAG={builder_tag}",
-        "--push",
-        ".",
     ]
+
+    # Conditional plugin pins for older Caddy (< 2.10.0)
+    v = parse_caddy_version(tag)
+    if v and v < (2, 10, 0):
+        souin_pin = os.environ.get("SOUIN_VERSION_LT_2_10", "").strip()
+        storages_pin = os.environ.get("STORAGES_VERSION_LT_2_10", "").strip()
+        if souin_pin:
+            cmd += ["--build-arg", f"SOUIN_VERSION={souin_pin}"]
+        if storages_pin:
+            cmd += ["--build-arg", f"STORAGES_VERSION={storages_pin}"]
+
+    cmd += ["--push", "."]
     code = run(cmd)
     if code != 0:
         log(f"Build failed for {tag} (exit {code})")
