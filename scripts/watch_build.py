@@ -169,6 +169,10 @@ def sync_once(conn: sqlite3.Connection) -> None:
     log(f"Found {len(targets)} 2.x tags to mirror (incl. alpine)")
     cur = conn.cursor()
     for tag in targets:
+        # Defensive guard: never build Windows Server Core variants even if they slip past filters
+        if "windowsservercore" in tag:
+            log(f"Skip {tag}: windowsservercore explicitly excluded")
+            continue
         digest = get_manifest_digest(tag)
         if not digest:
             log(f"Skip {tag}: no digest found")
@@ -201,6 +205,7 @@ def sync_once(conn: sqlite3.Connection) -> None:
 def main():
     parser = argparse.ArgumentParser(description="Mirror upstream caddy 2.x (+alpine) tags with custom build")
     parser.add_argument("--once", action="store_true", help="Run a single scan/build cycle and exit")
+    parser.add_argument("--list-only", action="store_true", help="List filtered tags and exit (no builds)")
     args = parser.parse_args()
 
     # Basic env checks
@@ -217,6 +222,16 @@ def main():
 
     conn = sqlite3.connect(DB_PATH)
     db_init(conn)
+
+    if args.list_only:
+        all_tags = list_hub_tags()
+        targets = filter_tags(all_tags)
+        for t in targets:
+            if "windowsservercore" in t:
+                log(f"(filtered but would skip) {t}")
+            else:
+                log(f"target: {t}")
+        return
 
     if args.once:
         sync_once(conn)
