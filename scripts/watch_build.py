@@ -140,6 +140,39 @@ def parse_caddy_version(tag: str) -> Optional[Tuple[int, int, int]]:
     return (major, minor, patch)
 
 
+def legacy_pin_defaults(v: Tuple[int, int, int]) -> dict:
+    """Return default plugin pins for legacy Caddy (<2.10.0) per version range.
+    Only returns pins known to often work; caller may override with env vars.
+    """
+    # Version ranges are inclusive of start, exclusive of end
+    if v < (2, 2, 0):
+        return {
+            "CLOUDFLARE_DNS_VERSION": "v0.1.3",
+            "SOUIN_VERSION": "v1.6.5",
+            "STORAGES_VERSION": "v1.6.5",
+            # CFIP not pinned by default; override via env if needed
+        }
+    if (2, 2, 0) <= v < (2, 5, 0):
+        return {
+            "CLOUDFLARE_DNS_VERSION": "v0.1.5",
+            "SOUIN_VERSION": "v1.7.0",
+            "STORAGES_VERSION": "v1.7.0",
+        }
+    if (2, 5, 0) <= v < (2, 8, 0):
+        return {
+            "CLOUDFLARE_DNS_VERSION": "v0.1.6",
+            "SOUIN_VERSION": "v1.7.6",
+            "STORAGES_VERSION": "v1.7.6",
+        }
+    if (2, 8, 0) <= v < (2, 10, 0):
+        return {
+            "CLOUDFLARE_DNS_VERSION": "v0.1.6",
+            "SOUIN_VERSION": "v1.7.6",
+            "STORAGES_VERSION": "v1.7.6",
+        }
+    return {}
+
+
 def decide_builder_tag(base_tag: str) -> str:
     # Always use the rolling builder image which ships a modern Go toolchain and xcaddy
     # Versioned builder images (e.g., 2.0.0-builder) are too old and fail installing xcaddy
@@ -175,6 +208,19 @@ def build_and_push(tag: str) -> bool:
         storages_pin = os.environ.get("STORAGES_VERSION_LT_2_10", "").strip()
         cf_dns_pin = os.environ.get("CLOUDFLARE_DNS_VERSION_LT_2_10", "").strip()
         cf_ip_pin = os.environ.get("CFIP_VERSION_LT_2_10", "").strip()
+
+        # Apply automatic fallbacks when env overrides are not provided
+        fallbacks = legacy_pin_defaults(v)
+        if not cf_dns_pin and "CLOUDFLARE_DNS_VERSION" in fallbacks:
+            cf_dns_pin = fallbacks["CLOUDFLARE_DNS_VERSION"]
+            log(f"Applying fallback pin for Cloudflare DNS: {cf_dns_pin}")
+        if not souin_pin and "SOUIN_VERSION" in fallbacks:
+            souin_pin = fallbacks["SOUIN_VERSION"]
+            log(f"Applying fallback pin for Souin: {souin_pin}")
+        if not storages_pin and "STORAGES_VERSION" in fallbacks:
+            storages_pin = fallbacks["STORAGES_VERSION"]
+            log(f"Applying fallback pin for storages: {storages_pin}")
+
         if souin_pin:
             cmd += ["--build-arg", f"SOUIN_VERSION={souin_pin}"]
         if storages_pin:
