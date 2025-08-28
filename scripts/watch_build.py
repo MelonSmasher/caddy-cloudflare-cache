@@ -20,9 +20,9 @@ REPO_GHCR = os.environ.get("TARGET_REPO_GHCR", "ghcr.io/melonsmasher/caddy-cloud
 DB_PATH = os.environ.get("STATE_DB", os.path.join(os.path.dirname(__file__), "state.db"))
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "600"))  # seconds
 PLATFORMS = os.environ.get("PLATFORMS", "linux/amd64,linux/arm64")
-# Mirror tags that start with 2 and optionally end with -alpine; exclude builder images from mirror set
+# Mirror tags that start with 2 and optionally end with -alpine; exclude builder and windowsservercore images from mirror set
 TAG_INCLUDE_REGEX = re.compile(r"^2(\..*)?(?:-alpine)?$")
-TAG_EXCLUDE_REGEX = re.compile(r".*-builder$")
+TAG_EXCLUDE_REGEX = re.compile(r"(?:.*-builder$)|(?:.*-windowsservercore-.*)")
 
 # Accept headers for manifest list (index) and image manifest
 ACCEPT_HEADERS = ", ".join([
