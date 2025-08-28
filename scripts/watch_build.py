@@ -27,6 +27,10 @@ TAG_EXCLUDE_REGEX = re.compile(r"(?:.*-builder$)|(?:.*-windowsservercore.*)")
 
 # Minimum Caddy version supported by the plugin set (e.g., cloudflare dns plugin requires >= v2.7.5)
 MIN_CADDY_VERSION = (2, 7, 5)
+ACCEPT_HEADERS = ", ".join([
+    "application/vnd.docker.distribution.manifest.list.v2+json",
+    "application/vnd.oci.image.index.v1+json",
+    "application/vnd.docker.distribution.manifest.v2+json",
     "application/vnd.oci.image.manifest.v1+json",
 ])
 
@@ -109,6 +113,26 @@ def list_hub_tags() -> List[str]:
     return tags
 
 
+def parse_caddy_version(tag: str) -> Optional[Tuple[int, int, int]]:
+    """Parse caddy tag like '2', '2.7', '2.7.6', optionally with '-alpine'.
+    Returns a (major, minor, patch) tuple or None if not a 2.x tag.
+    """
+    # Strip variant suffix (e.g., '-alpine')
+    base = tag.split("-", 1)[0]
+    parts = base.split(".")
+    # Must start with major '2'
+    try:
+        major = int(parts[0])
+    except (ValueError, IndexError):
+        return None
+    if major != 2:
+        return None
+    # Fill missing minor/patch with zeros
+    minor = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+    patch = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+    return (major, minor, patch)
+
+
 def filter_tags(all_tags: List[str]) -> List[str]:
     filtered = []
     for t in all_tags:
@@ -146,6 +170,8 @@ def build_and_push(tag: str) -> bool:
     log(f"Building for tag={tag}, builder_tag={builder_tag}")
 
     # Compose docker buildx command
+    dockerfile_path = os.path.join(os.path.dirname(__file__), "Dockerfile")
+    docker_context = os.path.dirname(dockerfile_path)
     cmd = [
         "docker", "buildx", "build",
         "--platform", PLATFORMS,
@@ -155,9 +181,9 @@ def build_and_push(tag: str) -> bool:
         "-t", f"{REPO_GHCR}:{tag}",
         "--build-arg", f"CADDY_TAG={tag}",
         "--build-arg", f"CADDY_BUILDER_TAG={builder_tag}",
-        "-f", "Dockerfile",
+        "-f", dockerfile_path,
         "--push",
-        ".",
+        docker_context,
     ]
     code = run(cmd)
     if code != 0:
