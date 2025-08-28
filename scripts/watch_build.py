@@ -22,14 +22,11 @@ POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "600"))  # seconds
 PLATFORMS = os.environ.get("PLATFORMS", "linux/amd64,linux/arm64")
 # Mirror only 2.x tags (optionally -alpine). Examples matched: 2, 2.7, 2.7.6, 2-alpine, 2.7-alpine, 2.7.6-alpine
 # Explicitly exclude builder images and any windowsservercore variants.
-TAG_INCLUDE_REGEX = re.compile(r"^2(?:\.\d+(?:\.\d+)?)?(?:-alpine)?$")
+TAG_INCLUDE_REGEX = re.compile(r"^2(?:\.?\d+(?:\.\d+)?)?(?:-alpine)?$")
 TAG_EXCLUDE_REGEX = re.compile(r"(?:.*-builder$)|(?:.*-windowsservercore.*)")
 
-# Accept headers for manifest list (index) and image manifest
-ACCEPT_HEADERS = ", ".join([
-    "application/vnd.docker.distribution.manifest.list.v2+json",
-    "application/vnd.oci.image.index.v1+json",
-    "application/vnd.docker.distribution.manifest.v2+json",
+# Minimum Caddy version supported by the plugin set (e.g., cloudflare dns plugin requires >= v2.7.5)
+MIN_CADDY_VERSION = (2, 7, 5)
     "application/vnd.oci.image.manifest.v1+json",
 ])
 
@@ -118,6 +115,12 @@ def filter_tags(all_tags: List[str]) -> List[str]:
         if TAG_EXCLUDE_REGEX.match(t):
             continue
         if TAG_INCLUDE_REGEX.match(t):
+            v = parse_caddy_version(t)
+            if not v:
+                continue
+            if v < MIN_CADDY_VERSION:
+                # below supported baseline for our plugin set
+                continue
             filtered.append(t)
     # Unique and sorted for stability
     return sorted(set(filtered))
@@ -167,7 +170,7 @@ def build_and_push(tag: str) -> bool:
 def sync_once(conn: sqlite3.Connection) -> None:
     all_tags = list_hub_tags()
     targets = filter_tags(all_tags)
-    log(f"Found {len(targets)} 2.x tags to mirror (incl. alpine)")
+    log(f"Found {len(targets)} 2.x tags to mirror (>= {'.'.join(map(str, MIN_CADDY_VERSION))}, incl. alpine)")
     cur = conn.cursor()
     for tag in targets:
         # Defensive guard: never build Windows Server Core variants even if they slip past filters
