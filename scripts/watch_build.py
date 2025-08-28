@@ -172,8 +172,12 @@ def build_and_push(tag: str) -> bool:
     # Compose docker buildx command
     dockerfile_path = os.path.join(os.path.dirname(__file__), "Dockerfile")
     docker_context = os.path.dirname(dockerfile_path)
-    cmd = [
-        "docker", "buildx", "build",
+    cmd: List[str] = ["docker", "buildx", "build"]
+    # Options block; ensure flag/value adjacency is preserved
+    opts: List[str] = []
+    if ALWAYS_PULL:
+        opts += ["--pull"]
+    opts += [
         "--platform", PLATFORMS,
         "--provenance=false",
         "-t", f"{REPO_DOCKERHUB}:{tag}",
@@ -183,8 +187,7 @@ def build_and_push(tag: str) -> bool:
         "--push",
         docker_context,
     ]
-    if ALWAYS_PULL:
-        cmd.insert(4, "--pull")
+    cmd += opts
     code = run(cmd)
     if code != 0:
         log(f"Build failed for {tag} (exit {code})")
