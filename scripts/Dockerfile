@@ -10,7 +10,9 @@ RUN set -eux; \
     # Ensure xcaddy is present (older builder tags may not include it)
     if ! command -v xcaddy >/dev/null 2>&1; then \
       export GOBIN=/usr/bin; \
-      go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest; \
+      # Prefer module-aware install; fallback to GOPATH-mode for very old Go toolchains \
+      (GO111MODULE=on go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest \
+        || go get -u github.com/caddyserver/xcaddy/cmd/xcaddy); \
     fi; \
     # Derive caddy version from CADDY_TAG (strip -alpine, prefix with v); "2" becomes "v2"
     VER="$CADDY_TAG"; \
