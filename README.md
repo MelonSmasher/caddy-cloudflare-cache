@@ -1,5 +1,7 @@
 # Caddy Cloudflare Cache
 
+[![GitHub](https://img.shields.io/badge/GitHub-gray?logo=github)](https://github.com/melonsmasher/caddy-cloudflare-cache) [![DockerHub](https://img.shields.io/badge/DockerHub-white?logo=docker)](https://hub.docker.com/r/melonsmasher/caddy-cloudflare-cache) [![License](https://img.shields.io/github/license/melonsmasher/papercut-mf-site)](https://raw.githubusercontent.com/melonsmasher/caddy-cloudflare-cache/master/LICENSE)
+
 ## Overview
 
 Prebuilt Caddy image with:
